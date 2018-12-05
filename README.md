@@ -1,6 +1,6 @@
 # report
 Practice Report for PTHS
 
-Report in pdf is located in folder Perort/build.
+Report is located in folder Report
 
 Script and data is located in folder Scripts.
