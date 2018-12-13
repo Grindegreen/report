@@ -24,11 +24,12 @@ def gaussian(x, A, mu, sigma):
 
 
 def noise_plus_gaussian(x, A, mu, sigma, z):
-    return gaussian(x, A, mu, sigma) + z / x
+    eps = 10 ** -30
+    return gaussian(x, A, mu, sigma) + z / (x + eps)
 
 
 def MLERegression(parameters, x, y, noise_pds, which_type):
-    eps = 10 ** -20
+    eps = 10 ** -10
     if which_type == "Gaussian":
         A, mu, sigma = parameters[0], parameters[1], parameters[2]
         yhat = gaussian(x, A, mu, sigma)  # + noise_pds
@@ -38,7 +39,7 @@ def MLERegression(parameters, x, y, noise_pds, which_type):
     elif which_type == "Noise_plus_Gaussian":
         A, mu, sigma, z = parameters[0], parameters[1], parameters[2], parameters[3]
         yhat = noise_plus_gaussian(x, A, mu, sigma, z)  # + noise_pds
-    negLL = 2 * np.sum((y / (yhat + eps) + np.log(yhat + eps))) ** 2
+    negLL = 2 * np.sum((y / (yhat + eps) + np.log(yhat + eps)))
     return negLL
 
 
@@ -60,19 +61,19 @@ def fit_sinc2(dft_amplitude, freq, noise_pds, count=500):
     return result_min
 
 
-def fit_gaussian(dft_amplitude, freq, noise_pds, count=200):
-    guess = np.array([79, 0.38, 0.4, 0.1])
+def fit_gaussian(dft_amplitude, freq, noise_pds, count=1):
+    guess = np.array([1, 0.1, 0.1, 0.1])
     result_min = minimize(MLERegression, guess,
-                          args=(freq, dft_amplitude, noise_pds, "Noise_plus_Gaussian"), method='Nelder-Mead')
-    #                          options={'adaptive': True})
+                          args=(freq, dft_amplitude, noise_pds, "Noise_plus_Gaussian"), method='Nelder-Mead',
+                          options={'adaptive': True})
     for i in range(count - 1):
-        guess[0] = 79
-        guess[1] = 0.38
-        guess[2], guess[3] = np.random.rand(2)
-        # guess[0] *= freq[-1]
+        # guess = np.array([50, 0.038, 0, 0])
+        # guess[2], guess[3] = np.random.rand(2)
+        # guess[2] *= 10
+        guess = (np.random.rand(4) + 1) * 100
         result_tmp = minimize(MLERegression, guess,
-                              args=(freq, dft_amplitude, noise_pds, "Noise_plus_Gaussian"), method='Nelder-Mead')
-        #                     options={'adaptive': True})
+                              args=(freq, dft_amplitude, noise_pds, "Noise_plus_Gaussian"), method='Nelder-Mead',
+                              options={'adaptive': True})
         if MLERegression(result_tmp.x, freq, dft_amplitude, noise_pds, 'Noise_plus_Gaussian') < MLERegression(
                 result_min.x, freq, dft_amplitude, noise_pds, 'Noise_plus_Gaussian'):
             result_min = result_tmp
@@ -84,7 +85,7 @@ def plot_fitting(freq, dft_amplitude, noise_pds):
 
     results_gaussian = fit_gaussian(dft_amplitude[1:], freq[1:], noise_pds[1:])
     axs.plot(freq, dft_amplitude, freq,
-             noise_plus_gaussian(freq, results_gaussian.x[0], results_gaussian.x[1], results_gaussian.x[2],
+             noise_plus_gaussian(freq, results_gaussian.x[0] * 50, results_gaussian.x[1], results_gaussian.x[2],
                                  results_gaussian.x[3]), "g--")
     plt.xscale('log')
     axs.set_xlabel("Frequency (Hz)")
@@ -175,6 +176,12 @@ def print_pds(freq, dft_amplitude):
     fout.close()
 
 
+def print_gaussian(day, result, fout):
+    # fout.write("A (coefficent by Gaussian)  mu (mean)  sigma   z( z / f )")
+    print(day, result.x[0], result.x[1], result.x[2], result.x[3],
+          noise_plus_gaussian(result.x[1], result.x[0], result.x[1], result.x[2], result.x[3]), sep="    ", file=fout)
+
+
 def running_mean(ti, tf, x, N):
     dt = tf[N - 1::N] - ti[:-N + 1:N]
     # print tf[N-1::N], ti[:-N+1:N], dt
@@ -220,6 +227,8 @@ def gaussian_parameters(file_name):
     j0 = 0
     # while ti_out[j0] / 86400 < 40:
     #     j0 += 1
+    fout = open("Gaussian parametres.txt", "w")
+    fout.write("day   A    mu   sigma   z   Power\n")
     for i in range(130):
         signal = []
         arr_time = []
@@ -248,9 +257,11 @@ def gaussian_parameters(file_name):
 
         # plot_fitting(freq[1:], dft_amplitude[1:], noise_pds[1:])
         result_gaussian = fit_gaussian(dft_amplitude, freq, noise_pds)
-        print('Parametres:', result_gaussian.x[0], result_gaussian.x[1], result_gaussian.x[2], result_gaussian.x[3], 'Power:',
-              noise_plus_gaussian(result_gaussian.x[1], result_gaussian.x[0], result_gaussian.x[1],
-                                  result_gaussian.x[2], result_gaussian.x[3]))
+        print_gaussian(i + 1, result_gaussian, fout)
+        # print('Parametres:', result_gaussian.x[0], result_gaussian.x[1], result_gaussian.x[2], result_gaussian.x[3],
+        #      'Power:', noise_plus_gaussian(result_gaussian.x[1], result_gaussian.x[0], result_gaussian.x[1],
+        #                                     result_gaussian.x[2], result_gaussian.x[3]))
+    fout.close()
 
 
 def main():
