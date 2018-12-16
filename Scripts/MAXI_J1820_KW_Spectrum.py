@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
 
-import matplotlib.pyplot as plt
 import numpy as np
-from numpy.distutils.tests.test_exec_command import redirect_stderr
 from numpy.fft import rfft, rfftfreq
 from scipy import stats
 from scipy.optimize import minimize
 
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+mpl.use('Agg')
+
 import sys
 import warnings
 
+sys.setrecursionlimit(10000)
 if not sys.warnoptions:
     warnings.simplefilter("ignore")
 
@@ -29,6 +33,12 @@ def noise_plus_gaussian(x, A, mu, sigma, z):
 
 
 def MLERegression(parameters, x, y, noise_pds, which_type):
+    """
+    Функция минимизации - МНП
+    parameters - массив предполонаемых параметров фунции
+    which_type - какую функцию мы фитируем
+    eps нужен для того, чтобы функция не считала логарифм 0
+    """
     eps = 10 ** -10
     if which_type == "Gaussian":
         A, mu, sigma = parameters[0], parameters[1], parameters[2]
@@ -44,6 +54,12 @@ def MLERegression(parameters, x, y, noise_pds, which_type):
 
 
 def fit_sinc2(dft_amplitude, freq, noise_pds, count=500):
+    """
+    Функция, ответсвенная за аппрокимацию спектра sinc^2
+    count - количество попыток фитинга внутри самой функции
+    guess - массив с изначальными параметрами функции
+    result_min - результат аппроксимации; он же и возвращается в качестсве результата выполнения
+    """
     guess = np.array([2, 1, 5])
     result_min = minimize(MLERegression, guess,
                           args=(freq, dft_amplitude, noise_pds, "Sinc^2"), method='Nelder-Mead',
@@ -62,6 +78,12 @@ def fit_sinc2(dft_amplitude, freq, noise_pds, count=500):
 
 
 def fit_gaussian(dft_amplitude, freq, noise_pds, count=1):
+    """
+    Функция, ответсвенная за аппрокимацию спектра QPO гауссианой
+    count - количество попыток фитинга внутри самой функции
+    guess - массив с изначальными параметрами функции
+    result_min - результат аппроксимации; он же и возвращается в качестсве результата выполнения
+    """
     guess = np.array([1, 0.1, 0.1, 0.1])
     result_min = minimize(MLERegression, guess,
                           args=(freq, dft_amplitude, noise_pds, "Noise_plus_Gaussian"), method='Nelder-Mead',
@@ -80,19 +102,23 @@ def fit_gaussian(dft_amplitude, freq, noise_pds, count=1):
     return result_min
 
 
-def plot_fitting(freq, dft_amplitude, noise_pds):
+def plot_fitting(freq, dft_amplitude, noise_pds, day):
+    """
+    Функция построения аппроксимированной функции поверх спектра мощности
+    day - день, в который построен спектр; нужен, для сохранения графиков
+    """
     fig, axs = plt.subplots(1, 1, constrained_layout=True)
 
     results_gaussian = fit_gaussian(dft_amplitude[1:], freq[1:], noise_pds[1:])
     axs.plot(freq, dft_amplitude, freq,
-             noise_plus_gaussian(freq, results_gaussian.x[0] * 50, results_gaussian.x[1], results_gaussian.x[2],
+             noise_plus_gaussian(freq, results_gaussian.x[0], results_gaussian.x[1], results_gaussian.x[2],
                                  results_gaussian.x[3]), "g--")
     plt.xscale('log')
     axs.set_xlabel("Frequency (Hz)")
     axs.set_ylabel("Power")
     axs.set_title("Gaussian fitting")
 
-    plt.show()
+    plt.savefig('figures\\MAXI_J1820+070_KW_gaussian_approximation_day_{:d}.png'.format(day))
 
 
 '''    results_sinc2 = fit_sinc2(dft_amplitude[1:], freq[1:], noise_pds[1:])
@@ -177,6 +203,9 @@ def print_pds(freq, dft_amplitude):
 
 
 def print_gaussian(day, result, fout):
+    """
+    Функция, в которой производится вывод параметров функции в файл
+    """
     # fout.write("A (coefficent by Gaussian)  mu (mean)  sigma   z( z / f )")
     print(day, result.x[0], result.x[1], result.x[2], result.x[3],
           noise_plus_gaussian(result.x[1], result.x[0], result.x[1], result.x[2], result.x[3]), sep="    ", file=fout)
@@ -218,6 +247,10 @@ def read_kw_data(file_name):
 
 
 def gaussian_parameters(file_name):
+    """
+    Основная функция, в которой спектр разбивается на дни.
+    Для каждого из них находится пик QPO и его выводится в файл, а затем в график
+    """
     ti_out, tf_out, counts_out, rate_err, T0_mjd = read_kw_data(file_name)
 
     LENGTH = len(ti_out)
@@ -228,14 +261,23 @@ def gaussian_parameters(file_name):
     # while ti_out[j0] / 86400 < 40:
     #     j0 += 1
     fout = open("Gaussian parametres.txt", "w")
+
+    """
+    Формула для аппроксимации: A * gaussian(mu, sigma) + z / x
+    """
     fout.write("day   A    mu   sigma   z   Power\n")
+
     for i in range(130):
+        """
+        Последовательное разбиение спектра на дни
+        """
         signal = []
         arr_time = []
         while i <= ti_out[j0] / 86400 <= (i + 1):
             signal += [counts_out[j0]]
             arr_time += [ti_out[j0]]
             j0 += 1
+
         signal = np.array(signal)
         arr_time = np.array(arr_time)
         N_gamma = np.sum(signal)
@@ -246,7 +288,7 @@ def gaussian_parameters(file_name):
         freq = rfftfreq(N, d=1 / sample_rate)
         noise_pds = 2.0 * np.ones_like(freq)
 
-        grid = plt.GridSpec(1, 1, wspace=0.4, hspace=0.3)
+        # grid = plt.GridSpec(1, 1, wspace=0.4, hspace=0.3)
         # print(dft_amplitude.size, freq.size)
         # exit()
         # plot_signal(arr_time[1:], signal[1:], freq[1:], dft_amplitude[1:], noise_pds[1:], grid)
@@ -255,9 +297,10 @@ def gaussian_parameters(file_name):
         # plot_spec_distr(dft_amplitude, noise_pds, grid)
         # print_pds(freq, dft_amplitude)
 
-        # plot_fitting(freq[1:], dft_amplitude[1:], noise_pds[1:])
+        plot_fitting(freq[1:], dft_amplitude[1:], noise_pds[1:], i + 1)
         result_gaussian = fit_gaussian(dft_amplitude, freq, noise_pds)
         print_gaussian(i + 1, result_gaussian, fout)
+
         # print('Parametres:', result_gaussian.x[0], result_gaussian.x[1], result_gaussian.x[2], result_gaussian.x[3],
         #      'Power:', noise_plus_gaussian(result_gaussian.x[1], result_gaussian.x[0], result_gaussian.x[1],
         #                                     result_gaussian.x[2], result_gaussian.x[3]))
