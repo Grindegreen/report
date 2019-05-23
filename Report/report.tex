@@ -7,11 +7,18 @@
 	\renewcommand\contentsname{\centering Оглавление}
 	\renewcommand\bibname{Список литературы}	
 	
-	\input{titlepage}
+	%\input{titlepage}
 	\input{table_of_contents}
 	\input{introduction}
 	\input{instruments_and_methods}
 	\input{results}
+	\input{interpretation}
+	
+	\vfill
+	\newpage
+
+	\addcontentsline{toc}{section}{Список литературы}
+	\bibliography{all}
 
 	
 \end{document}
